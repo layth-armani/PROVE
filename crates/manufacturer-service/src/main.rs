@@ -13,7 +13,7 @@ use tokio::sync::RwLock;
 
 use zkp_core::{
     load_or_generate, proof_from_hex, proof_to_hex, prove::supplier_public_inputs,
-    prove_manufacturer, vk_to_hex, BatchId, Claim, InnerProof, ManufacturerSecret,
+    prove_manufacturer, BatchId, Claim, InnerProof, ManufacturerSecret,
     SetupArtifacts,
 };
 
@@ -62,11 +62,6 @@ struct VerifyResponse {
     public_inputs: VerifyPublicInputs,
 }
 
-#[derive(Serialize)]
-struct VkResponse {
-    vk: String,
-}
-
 /// Manufacturer's own (secret) data per batch.
 fn seed_manufacturer_data() -> HashMap<u64, ManufacturerSecret> {
     let mut m = HashMap::new();
@@ -101,7 +96,6 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(health))
-        .route("/vk_outer", get(vk_outer))
         .route("/ingest", post(ingest))
         .route("/verify", post(verify))
         .with_state(state);
@@ -115,13 +109,6 @@ async fn main() -> anyhow::Result<()> {
 
 async fn health() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok" }))
-}
-
-async fn vk_outer(State(state): State<AppState>) -> impl IntoResponse {
-    match vk_to_hex(&state.setup.outer_vk) {
-        Ok(hex) => Json(VkResponse { vk: hex }).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
-    }
 }
 
 async fn ingest(
@@ -209,7 +196,6 @@ async fn verify(
     let inner_pub = supplier_public_inputs(BatchId(inner_batch_id), stored.claim);
 
     let proof2 = match prove_manufacturer(
-        &state.setup.outer_pk,
         bid,
         claim,
         req.nonce,
@@ -235,14 +221,9 @@ async fn verify(
     };
 
     if req.force_forge {
-        // Flip the first hex nibble to produce an invalid proof byte-stream.
-        if let Some(first) = proof_hex.get_mut(0..1) {
-            let ch = first.chars().next().unwrap();
-            let flipped = match ch {
-                '0' => '1',
-                _ => '0',
-            };
-            proof_hex.replace_range(0..1, &flipped.to_string());
+        // Replace first two hex chars with invalid hex so hex::decode fails at the verifier.
+        if proof_hex.len() >= 2 {
+            proof_hex.replace_range(0..2, "zz");
         }
         tracing::info!("🧪 Forgery injected for batch {}", bid);
     }

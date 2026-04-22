@@ -83,10 +83,25 @@ async fn main() -> anyhow::Result<()> {
     let mut proofs: HashMap<u64, (InnerProof, Claim)> = HashMap::new();
     for (batch_id, secret) in seed_batches() {
         let bid = BatchId(batch_id);
-        match prove_supplier(&setup.inner_pk, bid, Claim::Sustainable, secret) {
+        let claim = Claim::Sustainable;
+        if secret.water_liters_per_kg > claim.water_max() {
+            tracing::warn!(
+                "  ✗ Batch {} rejected: water {} > max {}",
+                bid, secret.water_liters_per_kg, claim.water_max()
+            );
+            continue;
+        }
+        if secret.recycled_content_pct < claim.recycled_min() {
+            tracing::warn!(
+                "  ✗ Batch {} rejected: recycled {}% < min {}%",
+                bid, secret.recycled_content_pct, claim.recycled_min()
+            );
+            continue;
+        }
+        match prove_supplier(&setup.inner_pk, bid, claim, secret) {
             Ok(proof) => {
                 tracing::info!("  ✔ Proof₁ generated for batch {}", bid);
-                proofs.insert(batch_id, (proof, Claim::Sustainable));
+                proofs.insert(batch_id, (proof, claim));
             }
             Err(e) => {
                 tracing::warn!("  ✗ Could not generate Proof₁ for batch {}: {}", bid, e);

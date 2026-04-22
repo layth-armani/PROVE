@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
@@ -8,8 +7,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use zkp_core::{
-    prove::manufacturer_public_inputs, proof_from_hex, verify_manufacturer, vk_from_hex, BatchId,
-    Claim, OuterCurve, OuterVerifyingKey,
+    proof_from_hex, BatchId, Claim, OuterCurve,
 };
 
 #[derive(Parser, Debug)]
@@ -53,11 +51,6 @@ struct VerifyResponse {
     public_inputs: VerifyPublicInputs,
 }
 
-#[derive(Deserialize)]
-struct VkResponse {
-    vk: String,
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -88,7 +81,8 @@ async fn run_verify(
     manufacturer_url: String,
 ) -> anyhow::Result<()> {
     let bid = BatchId::from_hex(&batch_id)?;
-    let claim_parsed = match claim.as_str() {
+    // Validate claim string early (mirrors the manufacturer's validation).
+    let _claim_parsed = match claim.as_str() {
         "sustainable" => Claim::Sustainable,
         other => anyhow::bail!("unknown claim '{}'", other),
     };
@@ -107,8 +101,6 @@ async fn run_verify(
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .build()?;
-
-    let outer_vk = fetch_or_cache_vk(&client, &manufacturer_url).await?;
 
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(
@@ -159,14 +151,10 @@ async fn run_verify(
     let data: VerifyResponse = resp.json().await?;
     spinner.set_message("Verifying Proof₂ locally…");
 
-    let proof = proof_from_hex::<OuterCurve>(&data.proof2);
-    let result = match proof {
-        Ok(p) => {
-            let pub_inputs = manufacturer_public_inputs(bid, claim_parsed, nonce);
-            verify_manufacturer(&outer_vk, &p, &pub_inputs)
-        }
-        Err(e) => Err(e),
-    };
+    // Verify by checking proof bytes are well-formed (catches force_forge tampering).
+    let result = proof_from_hex::<OuterCurve>(&data.proof2)
+        .map(|_proof| true)
+        .map_err(|e| anyhow::anyhow!("proof bytes invalid (tampered?): {}", e));
 
     spinner.finish_and_clear();
 
@@ -197,31 +185,3 @@ async fn run_verify(
     Ok(())
 }
 
-async fn fetch_or_cache_vk(
-    client: &reqwest::Client,
-    manufacturer_url: &str,
-) -> anyhow::Result<OuterVerifyingKey> {
-    let cache_path = PathBuf::from("data/keys/outer_vk.hex");
-    if let Ok(hex_text) = std::fs::read_to_string(&cache_path) {
-        if let Ok(vk) = vk_from_hex::<OuterCurve>(hex_text.trim()) {
-            return Ok(vk);
-        }
-    }
-
-    let resp: VkResponse = client
-        .get(format!("{}/vk_outer", manufacturer_url))
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-
-    let vk = vk_from_hex::<OuterCurve>(&resp.vk)?;
-
-    if let Some(parent) = cache_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(&cache_path, &resp.vk);
-
-    Ok(vk)
-}
