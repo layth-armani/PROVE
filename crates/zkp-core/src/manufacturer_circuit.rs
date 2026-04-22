@@ -3,7 +3,6 @@ use ark_crypto_primitives::snark::constraints::Groth16VerifierGadget;
 use ark_crypto_primitives::snark::Groth16;
 use ark_ec::pairing::Pairing;
 use ark_ff::{Field, PrimeField};
-use ark_groth16::{Proof as Groth16Proof, VerifyingKey as Groth16VerifyingKey};
 use ark_r1cs_std::alloc::{AllocVar, AllocationMode};
 use ark_r1cs_std::boolean::Boolean;
 use ark_r1cs_std::eq::EqGadget;
@@ -15,7 +14,7 @@ use ark_r1cs_std::R1CSVar;
 use ark_relations::ns;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 
-use crate::types::{BatchId, Claim, InnerCurve, InnerFq, InnerFr, ManufacturerSecret, OuterCurve, OuterFr};
+use crate::types::{BatchId, Claim, InnerCurve, InnerFq, InnerFr, InnerProof, InnerVerifyingKey, ManufacturerSecret, OuterCurve, OuterFr};
 
 /// ============================================================
 /// ManufacturerCircuit
@@ -49,9 +48,9 @@ pub struct ManufacturerCircuit {
     pub nonce: Option<u64>,
 
     /// Private: the supplier's proof to verify recursively
-    pub inner_proof: Option<Groth16Proof<InnerCurve>>,
+    pub inner_proof: Option<InnerProof>,
     /// Private: verifying key for the inner proof
-    pub inner_vk: Option<Groth16VerifyingKey<InnerCurve>>,
+    pub inner_vk: Option<InnerVerifyingKey>,
     /// Private: public inputs used when generating the inner proof [batch_id, claim_code]
     pub inner_public_inputs: Option<Vec<InnerFr>>,
     /// Private: manufacturer secret data
@@ -63,8 +62,8 @@ impl ManufacturerCircuit {
         batch_id: BatchId,
         claim: Claim,
         nonce: u64,
-        inner_proof: Groth16Proof<InnerCurve>,
-        inner_vk: Groth16VerifyingKey<InnerCurve>,
+        inner_proof: InnerProof,
+        inner_vk: InnerVerifyingKey,
         inner_public_inputs: Vec<InnerFr>,
         secret: ManufacturerSecret,
     ) -> Self {
@@ -126,7 +125,7 @@ impl ConstraintSynthesizer<OuterFr> for ManufacturerCircuit {
         // Allocate the inner proof as a witness variable
         let proof_var =
             <Groth16VerifierGadget<InnerCurve, InnerPairingVar> as AllocVar<
-                Groth16Proof<InnerCurve>,
+                InnerProof,
                 OuterFr,
             >>::new_witness(ns!(cs, "inner_proof"), || {
                 self.inner_proof.ok_or(SynthesisError::AssignmentMissing)
@@ -135,7 +134,7 @@ impl ConstraintSynthesizer<OuterFr> for ManufacturerCircuit {
         // Allocate the inner verifying key as a constant (or witness)
         let vk_var =
             <Groth16VerifierGadget<InnerCurve, InnerPairingVar> as AllocVar<
-                Groth16VerifyingKey<InnerCurve>,
+                InnerVerifyingKey,
                 OuterFr,
             >>::new_witness(ns!(cs, "inner_vk"), || {
                 self.inner_vk.ok_or(SynthesisError::AssignmentMissing)
