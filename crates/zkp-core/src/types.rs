@@ -81,57 +81,48 @@ impl std::fmt::Display for BatchId {
 /// Claims (Public Statements)
 /// =======================
 
-/// Enum representing the type of claim being proven.
-/// These are public statements verified via ZKP.
+/// Only one supported claim in the system:
+/// everything is verified against sustainability constraints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Claim {
-    /// Basic sustainability claim
+    /// Sustainability compliance claim
     Sustainable,
-
-    /// Stronger efficiency + sustainability claim
-    UltraEfficient,
 }
 
-/// Hardcoded parameters for each claim (used in circuits)
 impl Claim {
-    /// Convert claim to a numeric code (useful for circuit inputs)
+    /// Numeric encoding used inside ZK circuits
     pub fn to_code(&self) -> u64 {
         match self {
             Claim::Sustainable => 1,
-            Claim::UltraEfficient => 2,
         }
     }
 
-    /// Maximum allowed water usage (liters per kg)
+    /// Maximum allowed water consumption (liters per kg)
     pub fn water_max(&self) -> u32 {
         match self {
             Claim::Sustainable => 2000,
-            Claim::UltraEfficient => 800,
         }
     }
 
-    /// Minimum required recycled material percentage
+    /// Minimum recycled content required (%)
     pub fn recycled_min(&self) -> u32 {
         match self {
             Claim::Sustainable => 10,
-            Claim::UltraEfficient => 30,
         }
     }
 
-    /// Minimum required efficiency percentage (manufacturer-side)
+    /// Minimum manufacturing efficiency (%)
     pub fn efficiency_min(&self) -> u32 {
         match self {
             Claim::Sustainable => 70,
-            Claim::UltraEfficient => 90,
         }
     }
 
-    /// Maximum allowed energy consumption (optional constraint)
+    /// Optional energy constraint (None = not enforced in circuit)
     pub fn energy_max(&self) -> Option<u32> {
         match self {
             Claim::Sustainable => None,
-            Claim::UltraEfficient => Some(50),
         }
     }
 }
