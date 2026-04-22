@@ -303,7 +303,6 @@ pub struct ManufacturerSecret  { assembly_efficiency_pct: u32, energy_kwh_per_ce
 | Claim | `water` max | `recycled` min | `efficiency` min | `energy` max |
 |---|---:|---:|---:|---:|
 | Sustainable | 2000 L/kg | 10 % | 70 % | n/a |
-| UltraEfficient | 800 L/kg | 30 % | 90 % | 50 kWh/cell |
 
 ### Inner Circuit — `SupplierCircuit` (over `InnerFr`)
 
