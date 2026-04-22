@@ -424,10 +424,3 @@ mod tests {
         assert!(result.is_err() || cs.is_satisfied().unwrap() == false);
     }
 }
-'''
-
-with open('/mnt/agents/output/manufacturer_circuit.rs', 'w') as f:
-    f.write(manufacturer_circuit)
-
-print("manufacturer_circuit.rs written successfully!")
-print(f"File size: {len(manufacturer_circuit)} characters")
