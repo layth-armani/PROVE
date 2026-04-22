@@ -1,6 +1,4 @@
-manufacturer_circuit = '''use ark_bw6_761::{BW6_761 as OuterCurve, Fr as OuterFr};
-use ark_bls12_377::{Bls12_377 as InnerCurve, Fq as InnerFq, Fr as InnerFr};
-use ark_bls12_377::constraints::PairingVar as InnerPairingVar;
+manufacturer_circuit = '''use ark_bls12_377::constraints::PairingVar as InnerPairingVar;
 use ark_crypto_primitives::snark::constraints::Groth16VerifierGadget;
 use ark_crypto_primitives::snark::Groth16;
 use ark_ec::pairing::Pairing;
@@ -17,7 +15,7 @@ use ark_r1cs_std::R1CSVar;
 use ark_relations::ns;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 
-use crate::types::{BatchId, Claim, ManufacturerSecret, OuterFr as TypesOuterFr};
+use crate::types::{BatchId, Claim, InnerCurve, InnerFq, InnerFr, ManufacturerSecret, OuterCurve, OuterFr};
 
 /// ============================================================
 /// ManufacturerCircuit
@@ -393,12 +391,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_bw6_761::Fr;
     use ark_relations::r1cs::ConstraintSystem;
 
     #[test]
     fn test_circuit_satisfiable_with_valid_data() {
-        let cs = ConstraintSystem::<Fr>::new_ref();
+        let cs = ConstraintSystem::<OuterFr>::new_ref();
 
         // This is a structural test - actual proof verification would need
         // real setup artifacts. For unit tests we check constraint generation.
