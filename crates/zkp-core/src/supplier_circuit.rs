@@ -62,13 +62,24 @@ impl ConstraintSynthesizer<InnerFr> for SupplierCircuit {
         cs: ConstraintSystemRef<InnerFr>,
     ) -> Result<(), SynthesisError> {
         // ── Public inputs ────────────────────────────────────────────────────
-        let _batch_id_var = FpVar::<InnerFr>::new_input(cs.clone(), || {
+        let batch_id_var = FpVar::<InnerFr>::new_input(cs.clone(), || {
             Ok(InnerFr::from(self.batch_id))
         })?;
 
-        let _claim_code_var = FpVar::<InnerFr>::new_input(cs.clone(), || {
+        let claim_code_var = FpVar::<InnerFr>::new_input(cs.clone(), || {
             Ok(InnerFr::from(self.claim.to_code()))
         })?;
+
+        // Bind the public inputs into constraints so the proof is actually
+        // tied to them (not just "declared" as inputs).
+        //
+        // batch_id is specified as a u64 in the API, so enforce it fits in 64 bits.
+        enforce_non_negative(cs.clone(), &batch_id_var, 64)?;
+
+        // claim_code is currently fixed to Sustainable (1).
+        let sustainable_code =
+            FpVar::<InnerFr>::new_constant(cs.clone(), InnerFr::from(1u64))?;
+        claim_code_var.enforce_equal(&sustainable_code)?;
 
         // ── Private witnesses ────────────────────────────────────────────────
         let water_var = FpVar::<InnerFr>::new_witness(cs.clone(), || {
