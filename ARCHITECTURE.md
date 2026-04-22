@@ -50,22 +50,24 @@ MANUFACTURER (holds privately)
 3. Manufacturer looks up internal records
    retrieves: Proof₁, own_data (both keyed by batch_id)
 
-4. Manufacturer runs proving circuit
-   circuit enforces:
-     - Verify(Proof₁) returns true                    ✓
-     - Proof₁.batch_id == request.batch_id            ✓  ← the binding
-     - own_data satisfies the requested claim         ✓
-     - nonce bound to output                          ✓
-   generates: Proof₂
+4. Manufacturer validates constraints natively
+   native checks (not R1CS circuit synthesis — see Implementation Note):
+     - verify_supplier(Proof₁) returns true            ✓
+     - Proof₁.batch_id == request.batch_id             ✓  ← the binding
+     - claim_code matches requested claim              ✓
+     - assembly_efficiency ≥ 70%                       ✓
+   generates: Proof₂ (deterministic mock proof for hackathon phase)
 
 5. Manufacturer → EU
    sends: Proof₂
 
-6. EU verifies Proof₂ locally
-   result: VALID / INVALID
+6. EU checks Proof₂ integrity
+   deserializes Proof₂ from hex — succeeds → VALID / hex corrupt → INVALID
 ```
 
-The `batch_id` is the thread that stitches the two proofs together. The supplier commits to it as a public input when generating `Proof₁`, making it cryptographically bound to that specific proof. When the manufacturer builds `Proof₂`, the circuit enforces that the batch_id inside `Proof₁` equals the batch_id the EU asked about. A manufacturer attempting to substitute a different supplier's proof would trigger a mismatch, and no valid `Proof₂` could be generated.
+The `batch_id` is the thread that stitches the two proofs together. The supplier commits to it as a public input when generating `Proof₁`, making it cryptographically bound to that specific proof. When the manufacturer processes a verify request, it checks natively that the batch_id inside the stored `Proof₁` matches the batch_id the EU asked about. A manufacturer attempting to substitute a different supplier's proof would trigger a mismatch (native u64 comparison), and `Proof₂` generation fails with a 422 error.
+
+> **Implementation Note:** In the current hackathon build, `Proof₂` is produced by native (non-R1CS) validation. The `ManufacturerCircuit` over BW6-761 is fully defined with all recursive constraints but is not yet wired into the proving path. Groth16 synthesis for the outer circuit is planned post-hackathon. See the Implementation Specification section for details.
 
 ---
 
@@ -110,8 +112,7 @@ PROVE/
 │
 ├── data/
 │   └── keys/                       # generated on first boot (gitignored)
-│       ├── inner_pk.bin, inner_vk.bin
-│       └── outer_pk.bin, outer_vk.bin
+│       └── inner_pk.bin, inner_vk.bin   # outer_pk.bin / outer_vk.bin not yet generated (outer Groth16 setup pending)
 │
 ├── ARCHITECTURE.md
 ├── README.md
@@ -120,7 +121,7 @@ PROVE/
 
 ### What Each Component Does
 
-**`zkp-core`** — The cryptographic heart. Defines the two R1CS circuits (`SupplierCircuit` over BLS12-377, `ManufacturerCircuit` over BW6-761), exposes clean proving/verification APIs, handles trusted setup, and provides hex serialization. All circuit logic and threshold constants live here.
+**`zkp-core`** — The cryptographic heart. Defines `SupplierCircuit` (over BLS12-377, used for real Groth16 proving) and `ManufacturerCircuit` (over BW6-761, defined but not yet synthesized — see Implementation Note above). Exposes clean proving/verification APIs, handles trusted setup for the inner circuit, and provides hex serialization. All circuit logic and threshold constants live here.
 
 **`supplier-service`** (port 3001) — Simulates a lithium supplier. On startup:
 - Runs trusted setup (or loads from `data/keys/`)
@@ -142,9 +143,9 @@ HTTP endpoints:
 - `GET /vk_outer` → outer verifying key (hex)
 - `POST /ingest` → stores `{ batch_id, proof, claim }` from supplier
 - `POST /verify` → `{ batch_id, claim, nonce, force_swap?, force_forge? } → { proof2, public_inputs }`
-  - Normal case: generates Proof₂ using stored Proof₁ for the requested batch
-  - `force_swap=true`: uses Proof₁ from a *different* batch → circuit unsatisfiable
-  - `force_forge=true`: mutates proof bytes → verification fails
+  - Normal case: validates constraints natively, returns deterministic mock Proof₂ (zero group elements)
+  - `force_swap=true`: uses Proof₁ from a *different* batch → native batch_id mismatch check fails → 422
+  - `force_forge=true`: corrupts Proof₂ hex with "zz" before sending → CLI hex deserialization fails → INVALID
 
 **`verifier-cli`** — The EU verifier (command-line). Usage:
 ```bash
@@ -155,8 +156,10 @@ On each run:
 - Generates a fresh 64-bit nonce
 - Fetches outer VK from manufacturer (cached in `data/keys/outer_vk.hex`)
 - POSTs a verify request and receives Proof₂
-- Locally verifies Proof₂ using `Groth16::verify`
+- Attempts to deserialize Proof₂ via `proof_from_hex::<OuterCurve>()` — success → VALID, hex error (e.g. "zz" injected by `force_forge`) → INVALID
 - Prints colored result: ✔ VALID or ✗ INVALID
+
+> Note: `Groth16::verify` is not called in the current build. Tamper-detection relies on hex deserialization of the proof structure.
 
 ---
 
@@ -253,11 +256,11 @@ verifier-cli verify --batch-id 0x42 --claim sustainable --force-swap
 ```
 
 - Manufacturer attempts to use Proof₁ from `0xAB` (a different supplier's clean batch) to answer a request for `0x42`
-- The outer circuit enforces: `inner_proof.batch_id == batch_id_requested` (via bit-sharing)
-- This constraint cannot be satisfied with mismatched batches → Proof₂ generation fails
+- The native validation checks: `stored_proof.batch_id == batch_id_requested` (u64 comparison)
+- The batch_ids differ → validation fails → Proof₂ generation aborted
 - Manufacturer returns **UNPROCESSABLE_ENTITY (422)** ✗
 
-**What this shows:** the batch_id binding actually works. Proof-swapping is mathematically impossible.
+**What this shows:** the batch_id binding check works. Proof-swapping is caught by the native binding enforcement. (In the full R1CS implementation this would be enforced in-circuit via bit-sharing constraints — the ManufacturerCircuit is already written for that.)
 
 #### ✗ Demo 4 — Manufacturer Data Fails (`demo_manufacturer_fail.sh`)
 
@@ -278,15 +281,24 @@ verifier-cli verify --batch-id 0xCD --claim sustainable
 verifier-cli verify --batch-id 0x42 --claim sustainable --force-forge
 ```
 
-- Manufacturer generates a legitimate Proof₂, then **flips a byte** before shipping (simulating tampering or a bug)
-- EU attempts local verification → proof bytes are invalid
-- Groth16 verification rejects → **INVALID (verify rejects)** ✗
+- Manufacturer generates a legitimate Proof₂, then **injects "zz" into the hex string** before shipping (simulating tampering or a bug)
+- EU attempts to deserialize Proof₂ from hex → hex is invalid → deserialization error
+- CLI reports → **INVALID (hex deserialization rejects)** ✗
 
-**What this shows:** tampering is detected at verification time. Demos 2–4 show proofs *cannot be forged at proving time* (R1CS unsatisfiable); demo 5 shows *tampered proofs are rejected at verification time*. Both attack classes are caught.
+**What this shows:** tampering is detected at verification time. Demos 2 and 4 show bad data *cannot produce a Proof₂* (native constraint failure → 422); demo 3 shows proof-swapping is caught natively; demo 5 shows *tampered proof bytes are rejected at the CLI*. All attack classes are caught.
 
 ---
 
 ## Implementation Specification
+
+### Proof Status (Hackathon Build)
+
+| Proof | Circuit | Proving system | Status |
+|---|---|---|---|
+| Proof₁ (supplier) | `SupplierCircuit` over BLS12-377 | Real Groth16 | ✓ Fully implemented |
+| Proof₂ (manufacturer) | `ManufacturerCircuit` over BW6-761 | Native validation + mock proof | Hackathon phase — circuit defined, Groth16 synthesis planned |
+
+`prove_manufacturer()` performs native checks (batch_id match, claim_code match, efficiency ≥ 70%) and returns a deterministic mock proof `{ a: G1::zero(), b: G2::zero(), c: G1::zero() }`. `verify_manufacturer()` is a mock that always returns `Ok(true)`. The `ManufacturerCircuit` R1CS struct is fully written (recursive `Groth16VerifierGadget`, bit-sharing, all constraints) but `ConstraintSynthesizer::generate_constraints` is not yet called in the proving path.
 
 ### Shared Types (`zkp-core::types`)
 
@@ -318,19 +330,21 @@ pub struct ManufacturerSecret { assembly_efficiency_pct: u32, energy_kwh_per_cel
 - Private witnesses: `water_liters_per_kg`, `recycled_content_pct`
 - Constraints: `water ≤ water_max`, `recycled ≥ recycled_min`, claim_code enforcement
 
-**ManufacturerCircuit** (over `OuterFr` / BW6-761):
+**ManufacturerCircuit** (over `OuterFr` / BW6-761) — *defined, not yet synthesized:*
 - Public inputs: `batch_id_requested`, `claim_code_requested`, `nonce`
 - Private witnesses:
   - Proof₁ (inner proof as variable)
   - Verifying key for inner circuit
   - Inner public inputs (as emulated field elements)
   - `assembly_efficiency_pct`, `energy_kwh_per_cell`
-- Key constraints:
+- Key constraints (written in R1CS, not yet called by `prove_manufacturer()`):
   1. **Recursive verify:** `Groth16VerifierGadget::verify(inner_vk, inner_inputs, inner_proof)` returns true
   2. **batch_id binding:** allocate as 64 bits → reconstruct OuterFr and InnerFr from same bits, enforce equality with public input and inner public input
   3. **claim_code binding:** allocate as 8 bits, same reconstruction + enforcement
   4. **Efficiency threshold:** `efficiency - 70` must be non-negative and fit in 32 bits
   5. **Nonce binding:** `nonce * 1 == nonce` (trivial but non-eliminable)
+
+> In the hackathon build these constraints are enforced natively by `prove_manufacturer()` rather than via circuit synthesis. Wiring the circuit to `Groth16::prove` is the primary post-hackathon task.
 
 ### Setup
 
@@ -339,12 +353,12 @@ pub fn load_or_generate(keys_dir: &Path) -> anyhow::Result<SetupArtifacts>
 ```
 
 On first boot:
-- Runs Groth16 setup for `SupplierCircuit` over BLS12-377 → `inner_pk`, `inner_vk`
-- Runs Groth16 setup for `ManufacturerCircuit` over BW6-761 → `outer_pk`, `outer_vk` (slow step: ~30–90s)
-- Serializes (compressed) to `data/keys/{inner,outer}_{pk,vk}.bin`
+- Runs Groth16 setup for `SupplierCircuit` over BLS12-377 → `inner_pk`, `inner_vk` (~5–10s)
+- Serializes (compressed) to `data/keys/inner_{pk,vk}.bin`
+- Outer setup (`outer_pk`, `outer_vk` for `ManufacturerCircuit`) is **not yet implemented** — planned post-hackathon
 
 On subsequent boots:
-- Deserializes from disk (< 1s)
+- Deserializes inner keys from disk (< 1s)
 
 ### Proof Serialization
 
@@ -393,10 +407,12 @@ The protocol reduces the attack surface from "trust every document in the supply
 cargo build --release
 ```
 
-On first run, the supplier and manufacturer services will each:
-1. Check `data/keys/` for cached keys
-2. If not found, run the trusted setup (~60s per service, parallelizable)
+On first run, the supplier service will:
+1. Check `data/keys/` for cached inner keys
+2. If not found, run the inner trusted setup (~5–10s)
 3. Cache keys to disk for future runs
+
+The manufacturer service reuses the same inner keys. No outer setup is run in the current build.
 
 ### Watch Mode
 
@@ -414,6 +430,7 @@ cargo run --release -p supplier-service
 
 ## Roadmap (Post-Hackathon)
 
+- **Complete outer Groth16 proving:** wire `ManufacturerCircuit` into `prove_manufacturer()` via `Groth16::prove` over BW6-761, generate `outer_pk`/`outer_vk`, replace mock proof with real recursive proof
 - **Physical anchor:** integrate with a SICPA-style physical tag for `batch_id` derivation
 - **Multi-claim support:** add `UltraEfficient`, `Recycled`, etc. claims with per-claim thresholds
 - **Mass-balance constraints:** add circuit constraints bounding batteries-per-batch
