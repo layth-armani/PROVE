@@ -57,15 +57,7 @@ pub fn load_or_generate(keys_dir: &Path) -> anyhow::Result<SetupArtifacts> {
 
     // Outer circuit setup (ManufacturerCircuit over BW6-761)
     tracing::info!("Running outer circuit setup (this is the slow step)...");
-    let outer_circuit = ManufacturerCircuit {
-        batch_id_requested: None,
-        claim_code_requested: None,
-        nonce: None,
-        inner_proof: None,
-        inner_vk: None,
-        inner_public_inputs: None,
-        manufacturer_secret: None,
-    };
+    let outer_circuit = ManufacturerCircuit::blank();
     let (outer_pk, outer_vk) = Groth16::<OuterCurve>::circuit_specific_setup(outer_circuit, &mut rng)
         .map_err(|e| anyhow::anyhow!("Outer setup failed: {:?}", e))?;
 

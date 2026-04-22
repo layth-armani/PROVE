@@ -1,9 +1,8 @@
-use ark_ff::Field;
 use ark_r1cs_std::{
     alloc::AllocVar,
+    convert::ToBitsGadget,
     fields::fp::FpVar,
-    prelude::{Boolean, EqGadget, FieldVar},
-    R1CSVar,
+    prelude::{Boolean, EqGadget},
 };
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 
@@ -124,7 +123,7 @@ impl ConstraintSynthesizer<InnerFr> for SupplierCircuit {
 /// If val were negative (a large field element near the prime), the high bits
 /// would be set and the constraint would be unsatisfiable.
 fn enforce_non_negative(
-    cs: ConstraintSystemRef<InnerFr>,
+    _cs: ConstraintSystemRef<InnerFr>,
     val: &FpVar<InnerFr>,
     bit_len: usize,
 ) -> Result<(), SynthesisError> {
