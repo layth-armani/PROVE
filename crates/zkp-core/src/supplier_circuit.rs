@@ -14,7 +14,7 @@ use crate::types::{Claim, InnerFr};
 ///
 /// Public inputs (in order, as required by the verifying key):
 ///   1. batch_id   — u64 encoded as InnerFr
-///   2. claim_code — 1 = Sustainable, 2 = UltraEfficient
+///   2. claim_code — 1 = Sustainable
 ///
 /// Private witnesses:
 ///   - water_liters_per_kg
