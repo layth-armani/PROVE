@@ -8,6 +8,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use tower_http::cors::{Any, CorsLayer};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
@@ -98,7 +99,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health))
         .route("/ingest", post(ingest))
         .route("/verify", post(verify))
-        .with_state(state);
+        .with_state(state)
+        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any));
 
     let addr: SocketAddr = "0.0.0.0:3002".parse()?;
     tracing::info!("Manufacturer service listening on {}", addr);

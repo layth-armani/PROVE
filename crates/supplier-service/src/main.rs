@@ -9,6 +9,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use tower_http::cors::{Any, CorsLayer};
 use serde::{Deserialize, Serialize};
 
 use zkp_core::{
@@ -120,7 +121,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health))
         .route("/vk", get(vk))
         .route("/proof1", post(proof1))
-        .with_state(state);
+        .with_state(state)
+        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any));
 
     let addr: SocketAddr = "0.0.0.0:3001".parse()?;
     tracing::info!("Supplier service listening on {}", addr);

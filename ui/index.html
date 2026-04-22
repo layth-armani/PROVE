@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PROVE — ZKP Battery Compliance Demo</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0d1117;
+    --surface:  #161b22;
+    --border:   #30363d;
+    --text:     #c9d1d9;
+    --muted:    #8b949e;
+    --green:    #00ff87;
+    --red:      #ff4757;
+    --yellow:   #ffa502;
+    --blue:     #58a6ff;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  .page { max-width: 960px; margin: 0 auto; padding: 24px 20px 60px; }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  header { margin-bottom: 28px; }
+  header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: #e6edf3;
+  }
+  header h1 span { color: var(--green); }
+  header p { color: var(--muted); margin-top: 4px; font-size: 13px; }
+
+  /* ── Section titles ──────────────────────────────────────── */
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  /* ── Services status bar ─────────────────────────────────── */
+  .services-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .services-bar .label { font-size: 12px; color: var(--muted); margin-right: 4px; }
+  .service-indicator {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-family: 'Courier New', monospace;
+  }
+  .dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--border);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .dot.green  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.red    { background: var(--red);   box-shadow: 0 0 6px var(--red);   }
+  .dot.pulse  { animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .refresh-btn {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+  }
+  .refresh-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+  /* ── Supply chain flow ───────────────────────────────────── */
+  .flow-section { margin-bottom: 28px; }
+  .flow {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+  }
+  .flow-box {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 14px;
+    text-align: center;
+  }
+  .flow-box .icon { font-size: 22px; margin-bottom: 6px; }
+  .flow-box .name { font-weight: 700; font-size: 14px; color: #e6edf3; }
+  .flow-box .port { font-size: 11px; color: var(--blue); font-family: monospace; margin: 2px 0 6px; }
+  .flow-box .desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    color: var(--green);
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+
+  /* ── Batch table ─────────────────────────────────────────── */
+  .table-section { margin-bottom: 28px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  th {
+    background: var(--surface);
+    color: var(--muted);
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #21262d;
+    font-family: 'Courier New', monospace;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #1c2128; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: sans-serif;
+  }
+  .badge.valid   { background: #0d2a1a; color: var(--green); border: 1px solid #004d28; }
+  .badge.invalid { background: #2a0d0d; color: var(--red);   border: 1px solid #4d0000; }
+  .badge.warn    { background: #2a1e00; color: var(--yellow); border: 1px solid #4d3300; }
+
+  /* ── Scenario buttons ────────────────────────────────────── */
+  .scenarios-section { margin-bottom: 28px; }
+  .scenarios-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 12px;
+  }
+  .scenario-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    cursor: pointer;
+    transition: border-color 0.2s, transform 0.1s;
+  }
+  .scenario-card:hover { border-color: var(--green); transform: translateY(-1px); }
+  .scenario-card:active { transform: translateY(0); }
+  .scenario-card.loading { opacity: 0.6; pointer-events: none; }
+  .scenario-card button {
+    background: none;
+    border: none;
+    color: #e6edf3;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1.3;
+  }
+  .scenario-card .scenario-desc {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+  .scenario-card .scenario-tag {
+    font-size: 10px;
+    font-family: monospace;
+    color: var(--blue);
+    background: #0d1b2e;
+    border: 1px solid #1c3a5e;
+    border-radius: 4px;
+    padding: 2px 6px;
+    align-self: flex-start;
+  }
+
+  /* ── Result panel ────────────────────────────────────────── */
+  .result-section { margin-bottom: 24px; }
+  .result-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 12px;
+  }
+  .result-panel.idle { color: var(--muted); font-size: 13px; }
+
+  /* spinner */
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .result-verdict {
+    font-size: 32px;
+    font-weight: 900;
+    letter-spacing: -1px;
+  }
+  .result-verdict.valid   { color: var(--green); text-shadow: 0 0 20px rgba(0,255,135,0.4); }
+  .result-verdict.invalid { color: var(--red);   text-shadow: 0 0 20px rgba(255,71,87,0.4); }
+
+  .result-details {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    text-align: left;
+    font-family: monospace;
+    font-size: 12px;
+  }
+  .result-detail-row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+  }
+  .result-detail-row .key { color: var(--muted); flex-shrink: 0; min-width: 100px; }
+  .result-detail-row .val { color: var(--text); word-break: break-all; }
+
+  .result-error-msg {
+    font-size: 13px;
+    color: var(--muted);
+    max-width: 520px;
+  }
+
+  /* ── Last request ────────────────────────────────────────── */
+  .last-request-section { margin-bottom: 24px; }
+  .request-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: pre-wrap;
+    word-break: break-all;
+    min-height: 40px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <header>
+    <h1><span>PROVE</span> — ZKP Battery Compliance Demo</h1>
+    <p>Zero-knowledge proofs let the EU Verifier confirm a battery meets regulation thresholds — without the supply chain revealing raw data.</p>
+  </header>
+
+  <!-- Services status bar -->
+  <div class="services-bar">
+    <span class="label">Services:</span>
+    <div class="service-indicator" id="si-supplier">
+      <span class="dot pulse" id="dot-supplier"></span>
+      <span>Supplier :3001</span>
+    </div>
+    <div class="service-indicator" id="si-manufacturer">
+      <span class="dot pulse" id="dot-manufacturer"></span>
+      <span>Manufacturer :3002</span>
+    </div>
+    <button class="refresh-btn" onclick="checkHealth()">Refresh</button>
+  </div>
+
+  <!-- Supply chain flow -->
+  <div class="flow-section">
+    <div class="section-title">Supply Chain Flow</div>
+    <div class="flow">
+      <div class="flow-box">
+        <div class="icon">🏭</div>
+        <div class="name">Supplier</div>
+        <div class="port">localhost:3001</div>
+        <div class="desc">Holds raw material secrets. Generates Proof₁ that water &amp; recycled-content meet the threshold — without revealing actual values.</div>
+      </div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-box">
+        <div class="icon">🔩</div>
+        <div class="name">Manufacturer</div>
+        <div class="port">localhost:3002</div>
+        <div class="desc">Receives Proof₁, combines with its own assembly secrets, and generates Proof₂ (the outer ZKP) for the EU Verifier.</div>
+      </div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-box">
+        <div class="icon">🏛️</div>
+        <div class="name">EU Verifier</div>
+        <div class="port">this browser</div>
+        <div class="desc">Calls <code>/verify</code> and checks the returned Proof₂. Accepts or rejects based purely on the cryptographic proof — no raw data needed.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch info table -->
+  <div class="table-section">
+    <div class="section-title">Seeded Batch Data</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Batch ID</th>
+          <th>Water (L/kg)</th>
+          <th>Recycled %</th>
+          <th>Mfg Efficiency</th>
+          <th>Expected</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>0x42</td><td>500</td><td>50%</td><td>85%</td>
+          <td><span class="badge valid">VALID</span></td>
+        </tr>
+        <tr>
+          <td>0x99</td><td>3000</td><td>5%</td><td>—</td>
+          <td><span class="badge invalid">No Proof₁</span></td>
+        </tr>
+        <tr>
+          <td>0xAB</td><td>800</td><td>30%</td><td>80%</td>
+          <td><span class="badge valid">VALID</span></td>
+        </tr>
+        <tr>
+          <td>0xCD</td><td>700</td><td>40%</td><td>60%</td>
+          <td><span class="badge warn">Mfg Fail</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Scenarios -->
+  <div class="scenarios-section">
+    <div class="section-title">Run Demo Scenario</div>
+    <div class="scenarios-grid">
+
+      <div class="scenario-card" onclick="runScenario('0x42', false, false)">
+        <button>Valid Chain (0x42)</button>
+        <div class="scenario-tag">batch_id=0x42</div>
+        <div class="scenario-desc">Happy path — clean supplier data and good assembly efficiency produce a valid Proof₂.</div>
+      </div>
+
+      <div class="scenario-card" onclick="runScenario('0x99', false, false)">
+        <button>Bad Supplier (0x99)</button>
+        <div class="scenario-tag">batch_id=0x99</div>
+        <div class="scenario-desc">Supplier's water usage was too high; no Proof₁ was ever issued, so the manufacturer has nothing to build on.</div>
+      </div>
+
+      <div class="scenario-card" onclick="runScenario('0x42', true, false)">
+        <button>Proof Swap Attack (0x42)</button>
+        <div class="scenario-tag">force_swap=true</div>
+        <div class="scenario-desc">Manufacturer tries to reuse a proof from a different batch. The circuit binding detects the mismatch and rejects it.</div>
+      </div>
+
+      <div class="scenario-card" onclick="runScenario('0xCD', false, false)">
+        <button>Manufacturer Fail (0xCD)</button>
+        <div class="scenario-tag">batch_id=0xCD</div>
+        <div class="scenario-desc">Supplier's proof is fine but the manufacturer's own assembly efficiency falls below the threshold, causing Proof₂ to fail.</div>
+      </div>
+
+      <div class="scenario-card" onclick="runScenario('0x42', false, true)">
+        <button>Forged Proof (0x42)</button>
+        <div class="scenario-tag">force_forge=true</div>
+        <div class="scenario-desc">Server tampers with the proof bytes before returning them. The browser detects invalid hex and flags the proof as forged.</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Result panel -->
+  <div class="result-section">
+    <div class="section-title">Result</div>
+    <div class="result-panel idle" id="result-panel">
+      <span>Select a scenario above to run it.</span>
+    </div>
+  </div>
+
+  <!-- Last request -->
+  <div class="last-request-section">
+    <div class="section-title">Last Request</div>
+    <div class="request-box" id="last-request">—</div>
+  </div>
+
+</div><!-- /page -->
+
+<script>
+// ── Health check ────────────────────────────────────────────────────────────
+async function checkHealth() {
+  async function ping(url, dotId) {
+    const dot = document.getElementById(dotId);
+    dot.className = 'dot pulse';
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(3000) });
+      dot.className = r.ok ? 'dot green' : 'dot red';
+    } catch (_) {
+      dot.className = 'dot red';
+    }
+  }
+  await Promise.all([
+    ping('http://localhost:3001/health', 'dot-supplier'),
+    ping('http://localhost:3002/health', 'dot-manufacturer'),
+  ]);
+}
+checkHealth();
+
+// ── Scenario runner ─────────────────────────────────────────────────────────
+async function runScenario(batchId, forceSwap, forceForge) {
+  const panel = document.getElementById('result-panel');
+  const lastReq = document.getElementById('last-request');
+
+  const nonce = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
+  const body = {
+    batch_id: batchId,
+    claim: 'sustainable',
+    nonce: nonce,
+    force_swap: forceSwap,
+    force_forge: forceForge,
+  };
+
+  lastReq.textContent = JSON.stringify(body, null, 2);
+
+  // Show spinner
+  panel.className = 'result-panel';
+  panel.innerHTML = '<div class="spinner"></div>';
+
+  let response;
+  let data;
+  try {
+    response = await fetch('http://localhost:3002/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    panel.innerHTML =
+      '<div class="result-verdict invalid">&#10007; ERROR</div>' +
+      '<div class="result-error-msg">Could not reach the manufacturer service. Is it running on port 3002?</div>';
+    return;
+  }
+
+  if (response.status === 200) {
+    try { data = await response.json(); } catch (_) { data = null; }
+
+    // Check for forged / tampered proof
+    if (!data || !data.proof2) {
+      panel.innerHTML =
+        '<div class="result-verdict invalid">&#10007; INVALID</div>' +
+        '<div class="result-error-msg">Response was 200 but contained no proof.</div>';
+      return;
+    }
+
+    const firstByte = parseInt(data.proof2.slice(0, 2), 16);
+    if (isNaN(firstByte)) {
+      panel.innerHTML =
+        '<div class="result-verdict invalid">&#10007; INVALID (tampered)</div>' +
+        '<div class="result-error-msg">Proof₂ hex starts with non-hex bytes — the proof was forged or corrupted in transit.</div>' +
+        buildDetails(data);
+      return;
+    }
+
+    const proof2Short = data.proof2.slice(0, 32) + '...';
+    panel.innerHTML =
+      '<div class="result-verdict valid">&#10004; VALID</div>' +
+      buildDetails(data, proof2Short);
+    return;
+  }
+
+  // 404
+  if (response.status === 404) {
+    panel.innerHTML =
+      '<div class="result-verdict invalid">&#10007; CANNOT PROVE</div>' +
+      '<div class="result-error-msg">Supplier did not issue a proof for this batch.</div>';
+    return;
+  }
+
+  // 422
+  if (response.status === 422) {
+    let msg = '';
+    try { msg = await response.text(); } catch (_) {}
+    panel.innerHTML =
+      '<div class="result-verdict invalid">&#10007; INVALID</div>' +
+      '<div class="result-error-msg">' + escHtml(msg) + '</div>';
+    return;
+  }
+
+  // Other
+  panel.innerHTML =
+    '<div class="result-verdict invalid">&#10007; ERROR</div>' +
+    '<div class="result-error-msg">HTTP ' + response.status + '</div>';
+}
+
+function buildDetails(data, proof2Short) {
+  if (!data) return '';
+  const pi = data.public_inputs || {};
+  const rows = [
+    ['proof2', proof2Short || (data.proof2 ? data.proof2.slice(0, 32) + '...' : '—')],
+    ['batch_id', pi.batch_id || '—'],
+    ['claim', pi.claim || '—'],
+    ['nonce', pi.nonce !== undefined ? pi.nonce : '—'],
+  ];
+  return '<div class="result-details">' +
+    rows.map(([k, v]) =>
+      '<div class="result-detail-row"><span class="key">' + k + '</span><span class="val">' + escHtml(String(v)) + '</span></div>'
+    ).join('') +
+    '</div>';
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
